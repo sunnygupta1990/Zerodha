@@ -146,47 +146,34 @@ class ZerodhaApp {
         testBtn.disabled = true;
 
         try {
-            // Test real API connection - NO SIMULATION FALLBACK
-            const response = await fetch('http://localhost:5000/api/test-connection', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    api_key: this.settings.apiKey,
-                    access_token: this.settings.accessToken
-                })
-            });
+            // Test connection directly with Zerodha API
+            if (!this.settings.apiKey || !this.settings.accessToken) {
+                throw new Error('API Key and Access Token are required');
+            }
 
-            const result = await response.json();
+            // Test by getting user profile from Zerodha API
+            const response = await this.makeZerodhaAPICall('/user/profile', 'GET');
             
-            if (result.success) {
+            if (response && response.data) {
                 resultDiv.className = 'connection-result success';
                 resultDiv.style.display = 'block';
-                resultDiv.textContent = `✅ REAL API Connected! Account: ${result.user_name}`;
+                resultDiv.textContent = `✅ REAL API Connected! Account: ${response.data.user_name || response.data.email}`;
                 
                 this.isConnected = true;
                 this.updateConnectionStatus();
+                this.showNotification('✅ Connected to Zerodha API successfully!', 'success');
             } else {
-                throw new Error(result.message);
+                throw new Error('Invalid API response');
             }
             
         } catch (error) {
-            // NO SIMULATION FALLBACK - Show error if backend not running
-            if (error.message.includes('fetch')) {
-                resultDiv.className = 'connection-result error';
-                resultDiv.style.display = 'block';
-                resultDiv.textContent = '❌ Backend server not running! Start "start_trading_system.bat" on your local machine first.';
-                
-                this.showNotification('❌ Backend server not running! No real trading possible.', 'error');
-            } else {
-                resultDiv.className = 'connection-result error';
-                resultDiv.style.display = 'block';
-                resultDiv.textContent = '❌ Connection failed: ' + error.message;
-            }
+            resultDiv.className = 'connection-result error';
+            resultDiv.style.display = 'block';
+            resultDiv.textContent = '❌ Connection failed: ' + error.message;
             
             this.isConnected = false;
             this.updateConnectionStatus();
+            this.showNotification('❌ API connection failed: ' + error.message, 'error');
         }
 
         testBtn.innerHTML = 'Test API Connection';
@@ -291,43 +278,23 @@ Local file:// URLs will NOT work.
                 throw new Error('Not connected to API. Please configure and test your connection first.');
             }
 
-            let positions = [];
-            
-            // Get real positions from API server - NO SIMULATION FALLBACK
-            const response = await fetch('http://localhost:5000/api/positions', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    api_key: this.settings.apiKey,
-                    access_token: this.settings.accessToken
-                })
-            });
-
-            const result = await response.json();
-            
-            if (result.success && result.positions) {
-                // Process real positions data
-                positions = this.processPositionsData(result.positions);
-            } else {
-                throw new Error(result.message || 'Failed to get positions');
-            }
+            // Get real positions directly from Zerodha API
+            const positions = await this.getRealPositions();
             
             if (positions.length === 0) {
                 tableBody.innerHTML = '<tr><td colspan="6" class="no-data">No positions found.</td></tr>';
             } else {
                 tableBody.innerHTML = positions.map(position => `
                     <tr>
-                        <td>${position.symbol}</td>
+                        <td>${position.tradingsymbol}</td>
                         <td>${position.quantity}</td>
-                        <td>₹${position.averagePrice.toFixed(2)}</td>
-                        <td>₹${position.ltp.toFixed(2)}</td>
-                        <td class="${position.pnl >= 0 ? 'text-success' : 'text-danger'}">
-                            ₹${position.pnl.toFixed(2)}
+                        <td>₹${(position.average_price || 0).toFixed(2)}</td>
+                        <td>₹${(position.last_price || position.average_price || 0).toFixed(2)}</td>
+                        <td class="${(position.pnl || 0) >= 0 ? 'text-success' : 'text-danger'}">
+                            ₹${(position.pnl || 0).toFixed(2)}
                         </td>
-                        <td class="${position.dayChange >= 0 ? 'text-success' : 'text-danger'}">
-                            ${position.dayChange.toFixed(2)}%
+                        <td class="${(position.day_change || 0) >= 0 ? 'text-success' : 'text-danger'}">
+                            ${((position.day_change || 0) * 100).toFixed(2)}%
                         </td>
                     </tr>
                 `).join('');
@@ -515,40 +482,231 @@ Local file:// URLs will NOT work.
         }
 
         try {
-            // Deploy using REAL API server only - NO SIMULATION FALLBACK
-            const response = await fetch('http://localhost:5000/api/deploy', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    algorithm_id: algorithmId,
-                    algorithm_name: algorithm.name,
-                    algorithm_code: algorithm.code,
-                    api_key: this.settings.apiKey,
-                    access_token: this.settings.accessToken,
-                    max_positions: this.settings.maxPositions || 10,
-                    risk_per_trade: this.settings.riskPerTrade || 2.0,
-                    auto_trade: true  // Always enable real trading
-                })
-            });
-
-            const result = await response.json();
+            // Execute algorithm directly in browser with REAL trading
+            this.showNotification(`🔥 Deploying "${algorithm.name}" for REAL TRADING...`, 'info');
             
-            if (result.success) {
-                this.showNotification(`🔥 Algorithm "${algorithm.name}" deployed for REAL TRADING!`, 'success');
-                this.loadDeployments();
+            // Create deployment record
+            const deploymentId = Date.now().toString();
+            const deployment = {
+                id: deploymentId,
+                algorithmId,
+                algorithmName: algorithm.name,
+                status: 'running',
+                startedAt: new Date().toISOString(),
+                profit: 0,
+                trades: 0
+            };
+
+            this.deployments[deploymentId] = deployment;
+            localStorage.setItem('deployments', JSON.stringify(this.deployments));
+            
+            // Execute the algorithm with REAL trading
+            await this.executeAlgorithmDirectly(algorithm, deploymentId);
+            
+            this.loadDeployments();
+            this.showNotification(`🔥 Algorithm "${algorithm.name}" deployed for REAL TRADING!`, 'success');
+            
+        } catch (error) {
+            this.showNotification(`❌ Deployment failed: ${error.message}`, 'error');
+        }
+    }
+
+    async executeAlgorithmDirectly(algorithm, deploymentId) {
+        try {
+            // Execute NIFTY Buy Algorithm directly with REAL API calls
+            if (algorithm.name.includes('NIFTY')) {
+                await this.executeNiftyBuyAlgorithm(deploymentId);
             } else {
-                throw new Error(result.message);
+                // For custom algorithms, execute the code logic
+                await this.executeCustomAlgorithm(algorithm, deploymentId);
+            }
+        } catch (error) {
+            console.error('Algorithm execution error:', error);
+            throw error;
+        }
+    }
+
+    async executeNiftyBuyAlgorithm(deploymentId) {
+        try {
+            // Get current NIFTY symbol
+            const niftySymbol = this.getCurrentNiftySymbol();
+            
+            // Check market hours
+            if (!this.isMarketOpen()) {
+                this.showNotification('⚠️ Market is closed. Order not placed.', 'warning');
+                return;
+            }
+            
+            // Place REAL buy order
+            const orderResult = await this.placeRealOrder(niftySymbol, 'BUY', 50);
+            
+            if (orderResult.success) {
+                // Update deployment stats
+                this.deployments[deploymentId].trades++;
+                localStorage.setItem('deployments', JSON.stringify(this.deployments));
+                
+                this.showNotification(`✅ REAL ORDER PLACED! Order ID: ${orderResult.order_id}`, 'success');
+                
+                // Start monitoring the position
+                this.startPositionMonitoring(deploymentId, orderResult.order_id);
+            } else {
+                throw new Error(orderResult.message);
             }
             
         } catch (error) {
-            // NO SIMULATION FALLBACK - Show error if backend not running
-            if (error.message.includes('fetch')) {
-                this.showNotification('❌ Backend server not running! Start "start_trading_system.bat" first.', 'error');
+            this.showNotification(`❌ Order failed: ${error.message}`, 'error');
+            throw error;
+        }
+    }
+
+    getCurrentNiftySymbol() {
+        const now = new Date();
+        const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
+                       'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+        
+        const year = now.getFullYear().toString().slice(-2);
+        const month = months[now.getMonth()];
+        
+        return `NIFTY${year}${month}FUT`;
+    }
+
+    isMarketOpen() {
+        const now = new Date();
+        const currentTime = now.getHours() * 100 + now.getMinutes();
+        const isWeekday = now.getDay() >= 1 && now.getDay() <= 5;
+        
+        // Market hours: 9:15 AM to 3:30 PM
+        const marketOpen = 915;
+        const marketClose = 1530;
+        
+        return isWeekday && currentTime >= marketOpen && currentTime <= marketClose;
+    }
+
+    async placeRealOrder(symbol, transactionType, quantity) {
+        try {
+            // Use Zerodha's REST API directly from browser
+            const orderData = {
+                api_key: this.settings.apiKey,
+                access_token: this.settings.accessToken,
+                variety: 'regular',
+                exchange: 'NFO',
+                tradingsymbol: symbol,
+                transaction_type: transactionType.toLowerCase(),
+                quantity: quantity,
+                product: 'MIS',
+                order_type: 'MARKET'
+            };
+
+            // Make direct API call to Zerodha
+            const response = await this.makeZerodhaAPICall('/orders/regular', 'POST', orderData);
+            
+            if (response && response.data && response.data.order_id) {
+                return {
+                    success: true,
+                    order_id: response.data.order_id,
+                    message: 'Order placed successfully'
+                };
             } else {
-                this.showNotification(`❌ Deployment failed: ${error.message}`, 'error');
+                throw new Error(response.message || 'Order placement failed');
             }
+            
+        } catch (error) {
+            return {
+                success: false,
+                message: error.message
+            };
+        }
+    }
+
+    async makeZerodhaAPICall(endpoint, method, data) {
+        try {
+            const baseUrl = 'https://api.kite.trade';
+            const url = `${baseUrl}${endpoint}`;
+            
+            const options = {
+                method: method,
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'Authorization': `token ${this.settings.apiKey}:${this.settings.accessToken}`
+                }
+            };
+
+            if (method === 'POST' && data) {
+                const formData = new URLSearchParams();
+                Object.keys(data).forEach(key => {
+                    formData.append(key, data[key]);
+                });
+                options.body = formData;
+            }
+
+            const response = await fetch(url, options);
+            const result = await response.json();
+            
+            if (response.ok) {
+                return result;
+            } else {
+                throw new Error(result.message || 'API call failed');
+            }
+            
+        } catch (error) {
+            console.error('Zerodha API call failed:', error);
+            throw error;
+        }
+    }
+
+    startPositionMonitoring(deploymentId, orderId) {
+        // Monitor the position and update P&L
+        const interval = setInterval(async () => {
+            try {
+                const deployment = this.deployments[deploymentId];
+                if (!deployment || deployment.status !== 'running') {
+                    clearInterval(interval);
+                    return;
+                }
+
+                // Get real positions and update P&L
+                await this.updateDeploymentPnL(deploymentId);
+                
+            } catch (error) {
+                console.error('Position monitoring error:', error);
+            }
+        }, 30000); // Update every 30 seconds
+
+        // Store interval ID for cleanup
+        this.deployments[deploymentId].monitoringInterval = interval;
+    }
+
+    async updateDeploymentPnL(deploymentId) {
+        try {
+            const positions = await this.getRealPositions();
+            let totalPnL = 0;
+            
+            positions.forEach(pos => {
+                totalPnL += pos.pnl || 0;
+            });
+            
+            this.deployments[deploymentId].profit = totalPnL;
+            localStorage.setItem('deployments', JSON.stringify(this.deployments));
+            this.loadDeployments();
+            
+        } catch (error) {
+            console.error('P&L update error:', error);
+        }
+    }
+
+    async getRealPositions() {
+        try {
+            const response = await this.makeZerodhaAPICall('/portfolio/positions', 'GET');
+            
+            if (response && response.data && response.data.net) {
+                return response.data.net.filter(pos => pos.quantity !== 0);
+            }
+            
+            return [];
+            
+        } catch (error) {
+            console.error('Get positions error:', error);
+            return [];
         }
     }
 
