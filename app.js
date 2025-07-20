@@ -146,7 +146,7 @@ class ZerodhaApp {
         testBtn.disabled = true;
 
         try {
-            // Test real API connection
+            // Test real API connection - NO SIMULATION FALLBACK
             const response = await fetch('http://localhost:5000/api/test-connection', {
                 method: 'POST',
                 headers: {
@@ -163,7 +163,7 @@ class ZerodhaApp {
             if (result.success) {
                 resultDiv.className = 'connection-result success';
                 resultDiv.style.display = 'block';
-                resultDiv.textContent = `Connection successful! Connected to ${result.user_name}'s account.`;
+                resultDiv.textContent = `✅ REAL API Connected! Account: ${result.user_name}`;
                 
                 this.isConnected = true;
                 this.updateConnectionStatus();
@@ -172,33 +172,21 @@ class ZerodhaApp {
             }
             
         } catch (error) {
-            // Fallback to simulation if API server is not running
+            // NO SIMULATION FALLBACK - Show error if backend not running
             if (error.message.includes('fetch')) {
-                this.showNotification('API server not running. Using simulation mode.', 'warning');
-                await this.simulateApiCall();
-                
-                resultDiv.className = 'connection-result success';
+                resultDiv.className = 'connection-result error';
                 resultDiv.style.display = 'block';
-                resultDiv.textContent = 'Connection successful! (Simulation Mode)';
+                resultDiv.textContent = '❌ Backend server not running! Start "start_trading_system.bat" on your local machine first.';
                 
-                this.isConnected = true;
-                this.updateConnectionStatus();
-                
-                // Generate mock access token
-                if (this.settings.apiKey && this.settings.apiSecret && this.settings.requestToken) {
-                    const mockAccessToken = 'mock_access_token_' + Date.now();
-                    document.getElementById('accessToken').value = mockAccessToken;
-                    this.settings.accessToken = mockAccessToken;
-                    localStorage.setItem('settings', JSON.stringify(this.settings));
-                }
+                this.showNotification('❌ Backend server not running! No real trading possible.', 'error');
             } else {
                 resultDiv.className = 'connection-result error';
                 resultDiv.style.display = 'block';
-                resultDiv.textContent = 'Connection failed: ' + error.message;
-                
-                this.isConnected = false;
-                this.updateConnectionStatus();
+                resultDiv.textContent = '❌ Connection failed: ' + error.message;
             }
+            
+            this.isConnected = false;
+            this.updateConnectionStatus();
         }
 
         testBtn.innerHTML = 'Test API Connection';
@@ -305,36 +293,25 @@ Local file:// URLs will NOT work.
 
             let positions = [];
             
-            try {
-                // Try to get real positions from API server
-                const response = await fetch('http://localhost:5000/api/positions', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        api_key: this.settings.apiKey,
-                        access_token: this.settings.accessToken
-                    })
-                });
+            // Get real positions from API server - NO SIMULATION FALLBACK
+            const response = await fetch('http://localhost:5000/api/positions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    api_key: this.settings.apiKey,
+                    access_token: this.settings.accessToken
+                })
+            });
 
-                const result = await response.json();
-                
-                if (result.success && result.positions) {
-                    // Process real positions data
-                    positions = this.processPositionsData(result.positions);
-                } else {
-                    throw new Error(result.message || 'Failed to get positions');
-                }
-                
-            } catch (error) {
-                // Fallback to mock data if API server is not running
-                if (error.message.includes('fetch')) {
-                    console.log('API server not available, using mock data');
-                    positions = await this.getMockPositions();
-                } else {
-                    throw error;
-                }
+            const result = await response.json();
+            
+            if (result.success && result.positions) {
+                // Process real positions data
+                positions = this.processPositionsData(result.positions);
+            } else {
+                throw new Error(result.message || 'Failed to get positions');
             }
             
             if (positions.length === 0) {
