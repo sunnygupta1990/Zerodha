@@ -258,9 +258,9 @@ class AlgorithmExecutor:
             logger.info(f"Algorithm {config.algorithm_name} execution ended")
     
     def _enhance_algorithm_code(self, config: DeploymentConfig) -> str:
-        """Enhance algorithm code with KiteConnect integration"""
+        """Enhance algorithm code with KiteConnect integration for REAL trading"""
         
-        # Add imports and setup code
+        # Add imports and setup code for REAL trading
         setup_code = f'''
 import sys
 import os
@@ -273,54 +273,118 @@ from kiteconnect import KiteConnect
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Initialize KiteConnect
+# Initialize KiteConnect for REAL trading
 kite = KiteConnect(api_key="{config.api_key}")
 kite.set_access_token("{config.access_token}")
 
 # Global configuration
 MAX_POSITIONS = {config.max_positions}
 RISK_PER_TRADE = {config.risk_per_trade}
-AUTO_TRADE = {config.auto_trade}
 
 def get_positions():
-    """Get current positions"""
+    """Get current positions from Zerodha account"""
     try:
-        return kite.positions()
+        positions = kite.positions()
+        logger.info(f"Retrieved {{len(positions.get('net', []))}} net positions")
+        return positions
     except Exception as e:
         logger.error(f"Error getting positions: {{e}}")
         return {{"net": [], "day": []}}
 
 def place_order(symbol, transaction_type, quantity, order_type="MARKET", product="MIS"):
-    """Place an order using KiteConnect"""
+    """Place a REAL order using KiteConnect API"""
     try:
-        if not AUTO_TRADE:
-            logger.info(f"AUTO_TRADE disabled. Would place order: {{transaction_type}} {{quantity}} {{symbol}}")
-            return f"MOCK_ORDER_{{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}}"
+        logger.info(f"🔥 PLACING REAL ORDER: {{transaction_type}} {{quantity}} {{symbol}} on NFO")
         
+        # Map transaction type to KiteConnect constants
+        if transaction_type.upper() == "BUY":
+            kite_transaction_type = kite.TRANSACTION_TYPE_BUY
+        elif transaction_type.upper() == "SELL":
+            kite_transaction_type = kite.TRANSACTION_TYPE_SELL
+        else:
+            raise ValueError(f"Invalid transaction type: {{transaction_type}}")
+        
+        # Place REAL order on Zerodha
         order_id = kite.place_order(
             variety=kite.VARIETY_REGULAR,
-            exchange=kite.EXCHANGE_NFO,
+            exchange=kite.EXCHANGE_NFO,  # NFO for NIFTY futures
             tradingsymbol=symbol,
-            transaction_type=transaction_type,
+            transaction_type=kite_transaction_type,
             quantity=quantity,
-            product=product,
-            order_type=order_type
+            product=kite.PRODUCT_MIS,  # MIS for intraday
+            order_type=kite.ORDER_TYPE_MARKET  # MARKET order for immediate execution
         )
         
-        logger.info(f"Order placed successfully: {{order_id}}")
+        logger.info(f"✅ REAL ORDER PLACED SUCCESSFULLY!")
+        logger.info(f"   Order ID: {{order_id}}")
+        logger.info(f"   Symbol: {{symbol}}")
+        logger.info(f"   Transaction: {{transaction_type}}")
+        logger.info(f"   Quantity: {{quantity}}")
+        logger.info(f"   Exchange: NFO")
+        logger.info(f"   Product: MIS")
+        logger.info(f"   Order Type: MARKET")
+        
         return order_id
         
     except Exception as e:
-        logger.error(f"Error placing order: {{e}}")
+        logger.error(f"❌ REAL ORDER FAILED: {{str(e)}}")
+        # Log error but continue running as per requirements
         return None
 
 def get_quote(symbol):
-    """Get quote for a symbol"""
+    """Get real market quote for a symbol"""
     try:
-        return kite.quote(f"NFO:{{symbol}}")
+        quote_data = kite.quote(f"NFO:{{symbol}}")
+        if f"NFO:{{symbol}}" in quote_data:
+            quote = quote_data[f"NFO:{{symbol}}"]
+            logger.info(f"📊 Real market data for {{symbol}}: LTP ₹{{quote.get('last_price', 'N/A')}}")
+            return quote
+        else:
+            logger.warning(f"No quote data found for {{symbol}}")
+            return None
     except Exception as e:
-        logger.error(f"Error getting quote: {{e}}")
+        logger.error(f"Error getting real quote for {{symbol}}: {{e}}")
         return None
+
+def check_market_status():
+    """Check if market is open for trading"""
+    try:
+        # Get current time
+        now = datetime.datetime.now()
+        current_time = now.time()
+        
+        # Market hours: 9:15 AM to 3:30 PM on weekdays
+        market_open = datetime.time(9, 15)
+        market_close = datetime.time(15, 30)
+        
+        # Check if it's a weekday (Monday=0, Sunday=6)
+        is_weekday = now.weekday() < 5
+        
+        # Check if current time is within market hours
+        is_market_hours = market_open <= current_time <= market_close
+        
+        is_open = is_weekday and is_market_hours
+        
+        logger.info(f"Market Status Check:")
+        logger.info(f"  Current Time: {{current_time}}")
+        logger.info(f"  Is Weekday: {{is_weekday}}")
+        logger.info(f"  Market Hours: {{market_open}} - {{market_close}}")
+        logger.info(f"  Market Open: {{is_open}}")
+        
+        return is_open
+        
+    except Exception as e:
+        logger.error(f"Error checking market status: {{e}}")
+        return False
+
+def validate_symbol(symbol):
+    """Validate if the trading symbol exists"""
+    try:
+        quote = get_quote(symbol)
+        return quote is not None
+    except Exception as e:
+        logger.error(f"Error validating symbol {{symbol}}: {{e}}")
+        return False
 
 # Original algorithm code starts here:
 '''

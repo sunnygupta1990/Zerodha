@@ -50,50 +50,55 @@ def get_current_nifty_symbol():
 
 def place_buy_order(symbol):
     """
-    Place a buy order for NIFTY futures
+    Place a REAL buy order for NIFTY futures
     """
     try:
-        # Order parameters
+        # Check if market is open
+        if not check_market_status():
+            print("⚠️ Market is closed. Order not placed.")
+            return None
+        
+        # Validate symbol
+        if not validate_symbol(symbol):
+            print(f"❌ Invalid symbol: {symbol}")
+            return None
+        
+        # Order parameters for REAL trading
         quantity = 50  # 1 lot of NIFTY futures (50 shares)
         order_type = "MARKET"  # Market order for immediate execution
         product = "MIS"  # Intraday order
         
-        print(f"📈 Placing BUY order for {symbol}")
+        print(f"🔥 PLACING REAL BUY ORDER for {symbol}")
         print(f"   Quantity: {quantity}")
         print(f"   Order Type: {order_type}")
         print(f"   Product: {product}")
+        print(f"   Exchange: NFO")
         
         # Get current market data
-        market_data = get_market_data(symbol)
+        market_data = get_quote(symbol)
+        if market_data:
+            print(f"   Current LTP: ₹{market_data.get('last_price', 'N/A')}")
         
-        # In real implementation, this would use KiteConnect API:
-        # kite = KiteConnect(api_key="your_api_key")
-        # kite.set_access_token(access_token="your_access_token")
-        # 
-        # order_id = kite.place_order(
-        #     variety=kite.VARIETY_REGULAR,
-        #     exchange=kite.EXCHANGE_NFO,
-        #     tradingsymbol=symbol,
-        #     transaction_type=kite.TRANSACTION_TYPE_BUY,
-        #     quantity=quantity,
-        #     product=product,
-        #     order_type=order_type
-        # )
+        # Place REAL order using the enhanced place_order function
+        order_id = place_order(symbol, "BUY", quantity, order_type, product)
         
-        # Mock order placement for demo
-        order_id = f"ORDER_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        
-        print(f"✅ Order placed successfully!")
-        print(f"   Order ID: {order_id}")
-        print(f"   Symbol: {symbol}")
-        print(f"   Transaction: BUY")
-        print(f"   Quantity: {quantity}")
-        print(f"   Expected Price: ₹{market_data['last_price']}")
-        
-        # Log the trade
-        log_trade(order_id, symbol, "BUY", quantity, order_type, market_data['last_price'])
-        
-        return order_id
+        if order_id:
+            print(f"✅ REAL ORDER PLACED SUCCESSFULLY!")
+            print(f"   Order ID: {order_id}")
+            print(f"   Symbol: {symbol}")
+            print(f"   Transaction: BUY")
+            print(f"   Quantity: {quantity}")
+            print(f"   Exchange: NFO")
+            print(f"   Product: MIS")
+            
+            # Log the trade
+            current_price = market_data.get('last_price', 0) if market_data else 0
+            log_trade(order_id, symbol, "BUY", quantity, order_type, current_price)
+            
+            return order_id
+        else:
+            print(f"❌ Failed to place order for {symbol}")
+            return None
         
     except Exception as e:
         print(f"❌ Error placing order: {str(e)}")

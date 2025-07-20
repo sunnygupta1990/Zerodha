@@ -538,7 +538,7 @@ Local file:// URLs will NOT work.
         }
 
         try {
-            // Try to deploy using real API server
+            // Deploy using REAL API server only - NO SIMULATION FALLBACK
             const response = await fetch('http://localhost:5000/api/deploy', {
                 method: 'POST',
                 headers: {
@@ -552,45 +552,25 @@ Local file:// URLs will NOT work.
                     access_token: this.settings.accessToken,
                     max_positions: this.settings.maxPositions || 10,
                     risk_per_trade: this.settings.riskPerTrade || 2.0,
-                    auto_trade: this.settings.autoTrade || false
+                    auto_trade: true  // Always enable real trading
                 })
             });
 
             const result = await response.json();
             
             if (result.success) {
-                this.showNotification(`Algorithm "${algorithm.name}" deployed successfully!`, 'success');
+                this.showNotification(`🔥 Algorithm "${algorithm.name}" deployed for REAL TRADING!`, 'success');
                 this.loadDeployments();
             } else {
                 throw new Error(result.message);
             }
             
         } catch (error) {
-            // Fallback to simulation if API server is not running
+            // NO SIMULATION FALLBACK - Show error if backend not running
             if (error.message.includes('fetch')) {
-                this.showNotification('API server not running. Using simulation mode.', 'warning');
-                
-                const deploymentId = Date.now().toString();
-                const deployment = {
-                    id: deploymentId,
-                    algorithmId,
-                    algorithmName: algorithm.name,
-                    status: 'running',
-                    startedAt: new Date().toISOString(),
-                    profit: 0,
-                    trades: 0
-                };
-
-                this.deployments[deploymentId] = deployment;
-                localStorage.setItem('deployments', JSON.stringify(this.deployments));
-                
-                this.loadDeployments();
-                this.showNotification(`Algorithm "${algorithm.name}" deployed successfully! (Simulation Mode)`, 'success');
-                
-                // Simulate trading activity
-                this.simulateTrading(deploymentId);
+                this.showNotification('❌ Backend server not running! Start "start_trading_system.bat" first.', 'error');
             } else {
-                this.showNotification(`Deployment failed: ${error.message}`, 'error');
+                this.showNotification(`❌ Deployment failed: ${error.message}`, 'error');
             }
         }
     }
