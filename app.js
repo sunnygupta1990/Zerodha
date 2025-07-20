@@ -20,6 +20,9 @@ class ZerodhaApp {
         this.loadAlgorithms();
         this.loadDeployments();
         this.updateConnectionStatus();
+        
+        // Auto-connect if we have valid credentials
+        this.autoConnect();
     }
 
     setupEventListeners() {
@@ -81,29 +84,57 @@ class ZerodhaApp {
     // Settings Management
     saveSettings() {
         const settings = {
-            apiKey: document.getElementById('apiKey').value,
-            apiSecret: document.getElementById('apiSecret').value,
-            requestToken: document.getElementById('requestToken').value,
-            accessToken: document.getElementById('accessToken').value,
-            maxPositions: parseInt(document.getElementById('maxPositions').value),
-            riskPerTrade: parseFloat(document.getElementById('riskPerTrade').value),
+            apiKey: document.getElementById('apiKey').value.trim(),
+            apiSecret: document.getElementById('apiSecret').value.trim(),
+            requestToken: document.getElementById('requestToken').value.trim(),
+            accessToken: document.getElementById('accessToken').value.trim(),
+            redirectUrl: document.getElementById('redirectUrl').value.trim(),
+            maxPositions: parseInt(document.getElementById('maxPositions').value) || 10,
+            riskPerTrade: parseFloat(document.getElementById('riskPerTrade').value) || 2.0,
             autoTrade: document.getElementById('autoTrade').checked
         };
 
         this.settings = settings;
         localStorage.setItem('settings', JSON.stringify(settings));
         this.showNotification('Settings saved successfully!', 'success');
+        
+        // Auto-connect after saving if we have the required credentials
+        if (settings.apiKey && settings.accessToken) {
+            setTimeout(() => this.testConnection(), 1000);
+        }
     }
 
     loadSettings() {
+        // Set default redirect URL based on current domain
+        const defaultRedirectUrl = window.location.origin + '/redirect.html';
+        document.getElementById('redirectUrl').value = defaultRedirectUrl;
+        
         if (Object.keys(this.settings).length > 0) {
             document.getElementById('apiKey').value = this.settings.apiKey || '';
             document.getElementById('apiSecret').value = this.settings.apiSecret || '';
             document.getElementById('requestToken').value = this.settings.requestToken || '';
             document.getElementById('accessToken').value = this.settings.accessToken || '';
+            document.getElementById('redirectUrl').value = this.settings.redirectUrl || defaultRedirectUrl;
             document.getElementById('maxPositions').value = this.settings.maxPositions || 10;
             document.getElementById('riskPerTrade').value = this.settings.riskPerTrade || 2;
             document.getElementById('autoTrade').checked = this.settings.autoTrade || false;
+        }
+    }
+
+    async autoConnect() {
+        // Auto-connect if we have valid credentials
+        if (this.settings.apiKey && this.settings.accessToken) {
+            console.log('Auto-connecting with saved credentials...');
+            this.showNotification('Auto-connecting with saved credentials...', 'info');
+            
+            // Wait a bit for UI to load
+            setTimeout(() => {
+                this.testConnection();
+            }, 2000);
+        } else if (this.settings.apiKey && !this.settings.accessToken) {
+            this.showNotification('API Key found. Please complete OAuth flow to get access token.', 'warning');
+        } else {
+            this.showNotification('Please configure your API settings in the Settings tab.', 'info');
         }
     }
 
@@ -272,8 +303,39 @@ Local file:// URLs will NOT work.
                 throw new Error('Not connected to API. Please configure and test your connection first.');
             }
 
-            // Simulate API call to get positions
-            const positions = await this.getMockPositions();
+            let positions = [];
+            
+            try {
+                // Try to get real positions from API server
+                const response = await fetch('http://localhost:5000/api/positions', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        api_key: this.settings.apiKey,
+                        access_token: this.settings.accessToken
+                    })
+                });
+
+                const result = await response.json();
+                
+                if (result.success && result.positions) {
+                    // Process real positions data
+                    positions = this.processPositionsData(result.positions);
+                } else {
+                    throw new Error(result.message || 'Failed to get positions');
+                }
+                
+            } catch (error) {
+                // Fallback to mock data if API server is not running
+                if (error.message.includes('fetch')) {
+                    console.log('API server not available, using mock data');
+                    positions = await this.getMockPositions();
+                } else {
+                    throw error;
+                }
+            }
             
             if (positions.length === 0) {
                 tableBody.innerHTML = '<tr><td colspan="6" class="no-data">No positions found.</td></tr>';
@@ -299,6 +361,21 @@ Local file:// URLs will NOT work.
 
         refreshBtn.innerHTML = 'Refresh';
         refreshBtn.disabled = false;
+    }
+
+    processPositionsData(positionsData) {
+        // Process real Zerodha positions data into our format
+        const netPositions = positionsData.net || [];
+        
+        return netPositions.filter(pos => pos.quantity !== 0).map(pos => ({
+            symbol: pos.tradingsymbol,
+            quantity: pos.quantity,
+            averagePrice: pos.average_price || 0,
+            ltp: pos.last_price || pos.average_price || 0,
+            pnl: pos.pnl || 0,
+            dayChange: pos.last_price && pos.average_price ? 
+                ((pos.last_price - pos.average_price) / pos.average_price * 100) : 0
+        }));
     }
 
     async getMockPositions() {

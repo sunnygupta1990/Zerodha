@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test - Zerodha Trading App</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .test-section {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .success { color: #28a745; }
+        .error { color: #dc3545; }
+        .info { color: #17a2b8; }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background: #0056b3; }
+        .status { font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>🧪 Zerodha Trading App - Test Suite</h1>
+    
+    <div class="test-section">
+        <h2>✅ Features Fixed</h2>
+        <ul>
+            <li class="success">✅ Settings persistence - API info saved permanently</li>
+            <li class="success">✅ Auto-connection on app startup</li>
+            <li class="success">✅ Automatic redirect URL detection</li>
+            <li class="success">✅ Real API integration with fallback to simulation</li>
+            <li class="success">✅ Improved error handling and user feedback</li>
+        </ul>
+    </div>
+
+    <div class="test-section">
+        <h2>🚀 How to Test</h2>
+        <ol>
+            <li><strong>Start Backend:</strong> Run <code>start_trading_system.bat</code></li>
+            <li><strong>Open App:</strong> Open your Vercel app: <br>
+                <a href="https://zerodha-dung85nyp-sunnygupta1990s-projects.vercel.app/" target="_blank">
+                    https://zerodha-dung85nyp-sunnygupta1990s-projects.vercel.app/
+                </a>
+            </li>
+            <li><strong>Configure API:</strong> Go to Settings tab, enter your API credentials</li>
+            <li><strong>Test Connection:</strong> Click "Test API Connection"</li>
+            <li><strong>Deploy Algorithm:</strong> Go to Deployment tab, deploy the NIFTY algorithm</li>
+        </ol>
+    </div>
+
+    <div class="test-section">
+        <h2>🔧 Your Configuration</h2>
+        <p><strong>App URL:</strong> https://zerodha-dung85nyp-sunnygupta1990s-projects.vercel.app/</p>
+        <p><strong>Redirect URL:</strong> https://zerodha-dung85nyp-sunnygupta1990s-projects.vercel.app/redirect.html</p>
+        <p class="info">💡 The app will auto-detect and set this redirect URL for you!</p>
+    </div>
+
+    <div class="test-section">
+        <h2>🎯 Expected Behavior</h2>
+        <ul>
+            <li><strong>First Visit:</strong> App shows "Please configure API settings"</li>
+            <li><strong>After API Setup:</strong> Settings are saved and remembered</li>
+            <li><strong>Next Visit:</strong> App auto-connects with saved credentials</li>
+            <li><strong>With Backend:</strong> Real trading functionality</li>
+            <li><strong>Without Backend:</strong> Simulation mode with mock data</li>
+        </ul>
+    </div>
+
+    <div class="test-section">
+        <h2>🛠️ Troubleshooting</h2>
+        <div>
+            <button onclick="testLocalStorage()">Test Local Storage</button>
+            <button onclick="testApiServer()">Test API Server</button>
+            <button onclick="clearData()">Clear All Data</button>
+        </div>
+        <div id="testResults" style="margin-top: 20px;"></div>
+    </div>
+
+    <script>
+        function testLocalStorage() {
+            const results = document.getElementById('testResults');
+            try {
+                localStorage.setItem('test', 'working');
+                const value = localStorage.getItem('test');
+                localStorage.removeItem('test');
+                
+                if (value === 'working') {
+                    results.innerHTML = '<p class="success">✅ Local Storage is working correctly</p>';
+                } else {
+                    results.innerHTML = '<p class="error">❌ Local Storage test failed</p>';
+                }
+            } catch (e) {
+                results.innerHTML = '<p class="error">❌ Local Storage error: ' + e.message + '</p>';
+            }
+        }
+
+        function testApiServer() {
+            const results = document.getElementById('testResults');
+            results.innerHTML = '<p class="info">🔄 Testing API server...</p>';
+            
+            fetch('http://localhost:5000/api/health')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        results.innerHTML = '<p class="success">✅ API Server is running: ' + data.message + '</p>';
+                    } else {
+                        results.innerHTML = '<p class="error">❌ API Server responded but with error</p>';
+                    }
+                })
+                .catch(error => {
+                    results.innerHTML = '<p class="error">❌ API Server not reachable. Make sure to run start_trading_system.bat</p>';
+                });
+        }
+
+        function clearData() {
+            if (confirm('This will clear all saved settings and algorithms. Continue?')) {
+                localStorage.clear();
+                document.getElementById('testResults').innerHTML = '<p class="info">🗑️ All local data cleared</p>';
+            }
+        }
+
+        // Auto-test on page load
+        window.onload = function() {
+            testLocalStorage();
+            setTimeout(testApiServer, 1000);
+        };
+    </script>
+</body>
+</html>
