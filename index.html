@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zerodha Trading App</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/theme/monokai.min.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Navigation -->
+        <nav class="navbar">
+            <div class="nav-brand">
+                <h2>Zerodha Trading App</h2>
+            </div>
+            <div class="nav-menu">
+                <button class="nav-btn active" data-tab="positions">Positions</button>
+                <button class="nav-btn" data-tab="editor">Code Editor</button>
+                <button class="nav-btn" data-tab="deployment">Deployment</button>
+                <button class="nav-btn" data-tab="settings">Settings</button>
+            </div>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Positions Tab -->
+            <div id="positions" class="tab-content active">
+                <div class="tab-header">
+                    <h3>Current Positions</h3>
+                    <button id="refreshPositions" class="btn btn-primary">Refresh</button>
+                </div>
+                <div class="connection-status">
+                    <span id="connectionStatus" class="status-disconnected">Disconnected</span>
+                </div>
+                <div class="positions-container">
+                    <table class="positions-table">
+                        <thead>
+                            <tr>
+                                <th>Symbol</th>
+                                <th>Quantity</th>
+                                <th>Average Price</th>
+                                <th>LTP</th>
+                                <th>P&L</th>
+                                <th>Day Change</th>
+                            </tr>
+                        </thead>
+                        <tbody id="positionsTableBody">
+                            <tr>
+                                <td colspan="6" class="no-data">No positions found. Please check your API connection.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Code Editor Tab -->
+            <div id="editor" class="tab-content">
+                <div class="tab-header">
+                    <h3>Algorithm Code Editor</h3>
+                    <div class="editor-controls">
+                        <select id="algorithmSelect" class="form-select">
+                            <option value="">Select Algorithm</option>
+                        </select>
+                        <button id="saveAlgorithm" class="btn btn-success">Save</button>
+                        <button id="newAlgorithm" class="btn btn-primary">New</button>
+                        <button id="deleteAlgorithm" class="btn btn-danger">Delete</button>
+                    </div>
+                </div>
+                <div class="editor-container">
+                    <div class="editor-sidebar">
+                        <h4>Algorithm Name</h4>
+                        <input type="text" id="algorithmName" placeholder="Enter algorithm name" class="form-input">
+                        <h4>Description</h4>
+                        <textarea id="algorithmDescription" placeholder="Enter description" class="form-textarea"></textarea>
+                    </div>
+                    <div class="editor-main">
+                        <textarea id="codeEditor" placeholder="# Write your trading algorithm here
+# Example:
+# def trading_strategy():
+#     # Your trading logic
+#     pass"></textarea>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Deployment Tab -->
+            <div id="deployment" class="tab-content">
+                <div class="tab-header">
+                    <h3>Algorithm Deployment</h3>
+                    <button id="refreshDeployments" class="btn btn-primary">Refresh</button>
+                </div>
+                <div class="deployment-container">
+                    <div class="deployment-section">
+                        <h4>Available Algorithms</h4>
+                        <div class="algorithms-list" id="availableAlgorithms">
+                            <div class="no-data">No algorithms available</div>
+                        </div>
+                    </div>
+                    <div class="deployment-section">
+                        <h4>Running Deployments</h4>
+                        <div class="deployments-list" id="runningDeployments">
+                            <div class="no-data">No active deployments</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Settings Tab -->
+            <div id="settings" class="tab-content">
+                <div class="tab-header">
+                    <h3>API Settings</h3>
+                    <button id="saveSettings" class="btn btn-success">Save Settings</button>
+                </div>
+                <div class="settings-container">
+                    <div class="settings-section">
+                        <h4>Zerodha API Configuration</h4>
+                        <div class="form-group">
+                            <label for="apiKey">API Key</label>
+                            <input type="text" id="apiKey" class="form-input" placeholder="Enter your Zerodha API Key">
+                        </div>
+                        <div class="form-group">
+                            <label for="apiSecret">API Secret</label>
+                            <input type="password" id="apiSecret" class="form-input" placeholder="Enter your API Secret">
+                        </div>
+                        <div class="form-group">
+                            <label for="redirectUrl">Redirect URL</label>
+                            <input type="text" id="redirectUrl" class="form-input" placeholder="e.g., https://yourdomain.com/redirect.html">
+                            <small style="color: #6c757d; font-size: 0.875rem;">
+                                ⚠️ Must be a publicly accessible HTTPS URL. Local file:// URLs won't work.<br>
+                                <strong>Hosting Options:</strong> GitHub Pages, Netlify, Vercel, or any web server
+                            </small>
+                        </div>
+                        <div class="form-group">
+                            <button id="setupHosting" class="btn btn-info" style="width: 100%;">📋 View Hosting Setup Guide</button>
+                        </div>
+                        <div class="form-group">
+                            <label for="requestToken">Request Token</label>
+                            <input type="text" id="requestToken" class="form-input" placeholder="Enter Request Token">
+                            <small style="color: #6c757d; font-size: 0.875rem;">Obtained after Zerodha login redirect</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="accessToken">Access Token</label>
+                            <input type="text" id="accessToken" class="form-input" placeholder="Access Token (auto-generated)">
+                        </div>
+                        <div class="form-group">
+                            <button id="generateLoginUrl" class="btn btn-primary" style="width: 100%;">Generate Zerodha Login URL</button>
+                        </div>
+                    </div>
+                    <div class="settings-section">
+                        <h4>Trading Configuration</h4>
+                        <div class="form-group">
+                            <label for="maxPositions">Max Positions</label>
+                            <input type="number" id="maxPositions" class="form-input" value="10" min="1" max="50">
+                        </div>
+                        <div class="form-group">
+                            <label for="riskPerTrade">Risk Per Trade (%)</label>
+                            <input type="number" id="riskPerTrade" class="form-input" value="2" min="0.1" max="10" step="0.1">
+                        </div>
+                        <div class="form-group">
+                            <label for="autoTrade">
+                                <input type="checkbox" id="autoTrade"> Enable Auto Trading
+                            </label>
+                        </div>
+                    </div>
+                    <div class="settings-section">
+                        <h4>Connection Test</h4>
+                        <button id="testConnection" class="btn btn-primary">Test API Connection</button>
+                        <div id="connectionResult" class="connection-result"></div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/python/python.min.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>

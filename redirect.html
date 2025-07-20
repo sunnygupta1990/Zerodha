@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zerodha OAuth Redirect</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 2rem;
+            border-radius: 15px;
+            text-align: center;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+        .success {
+            color: #28a745;
+            font-size: 1.2rem;
+            margin-bottom: 1rem;
+        }
+        .token {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 1rem;
+            border-radius: 8px;
+            margin: 1rem 0;
+            word-break: break-all;
+            font-family: monospace;
+        }
+        .btn {
+            background: #28a745;
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1rem;
+            margin: 0.5rem;
+        }
+        .btn:hover {
+            background: #218838;
+        }
+        .error {
+            color: #dc3545;
+            font-size: 1.2rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Zerodha OAuth Callback</h2>
+        <div id="content">
+            <p>Processing authentication...</p>
+        </div>
+    </div>
+
+    <script>
+        // Extract request token from URL parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        const requestToken = urlParams.get('request_token');
+        const action = urlParams.get('action');
+        const status = urlParams.get('status');
+        
+        const contentDiv = document.getElementById('content');
+        
+        if (status === 'success' && requestToken) {
+            // Success case
+            contentDiv.innerHTML = `
+                <div class="success">✅ Authentication Successful!</div>
+                <p>Your request token has been generated:</p>
+                <div class="token">${requestToken}</div>
+                <p>Copy this token and paste it in the main application's Request Token field.</p>
+                <button class="btn" onclick="copyToken()">Copy Token</button>
+                <button class="btn" onclick="returnToApp()">Return to App</button>
+            `;
+            
+            // Store the token temporarily
+            localStorage.setItem('zerodha_request_token', requestToken);
+            
+        } else if (status === 'error') {
+            // Error case
+            contentDiv.innerHTML = `
+                <div class="error">❌ Authentication Failed</div>
+                <p>There was an error during authentication. Please try again.</p>
+                <button class="btn" onclick="returnToApp()">Return to App</button>
+            `;
+        } else {
+            // No parameters or invalid state
+            contentDiv.innerHTML = `
+                <div class="error">⚠️ Invalid Request</div>
+                <p>This page should only be accessed via Zerodha OAuth redirect.</p>
+                <button class="btn" onclick="returnToApp()">Return to App</button>
+            `;
+        }
+        
+        function copyToken() {
+            if (requestToken) {
+                navigator.clipboard.writeText(requestToken).then(() => {
+                    alert('Token copied to clipboard!');
+                }).catch(() => {
+                    // Fallback for older browsers
+                    const textArea = document.createElement('textarea');
+                    textArea.value = requestToken;
+                    document.body.appendChild(textArea);
+                    textArea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textArea);
+                    alert('Token copied to clipboard!');
+                });
+            }
+        }
+        
+        function returnToApp() {
+            // Return to the main application
+            window.location.href = 'index.html';
+        }
+        
+        // Auto-redirect after 10 seconds if successful
+        if (status === 'success' && requestToken) {
+            setTimeout(() => {
+                returnToApp();
+            }, 10000);
+        }
+    </script>
+</body>
+</html>
