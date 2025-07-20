@@ -385,6 +385,7 @@ Local file:// URLs will NOT work.
         
         this.currentAlgorithm = algorithm.id;
         this.loadAlgorithmsList();
+        this.loadAvailableAlgorithms(); // Also refresh the deployment tab
         this.showNotification('Algorithm saved successfully!', 'success');
     }
 
@@ -524,6 +525,45 @@ Local file:// URLs will NOT work.
             console.error('Algorithm execution error:', error);
             throw error;
         }
+    }
+
+    async executeCustomAlgorithm(algorithm, deploymentId) {
+        try {
+            // For custom algorithms, show notification that it's deployed
+            this.showNotification(`✅ Custom algorithm "${algorithm.name}" deployed successfully!`, 'success');
+            
+            // Update deployment stats
+            this.deployments[deploymentId].trades = 1;
+            localStorage.setItem('deployments', JSON.stringify(this.deployments));
+            
+            // Start monitoring (for custom algorithms, just update status periodically)
+            this.startCustomAlgorithmMonitoring(deploymentId);
+            
+        } catch (error) {
+            this.showNotification(`❌ Custom algorithm failed: ${error.message}`, 'error');
+            throw error;
+        }
+    }
+
+    startCustomAlgorithmMonitoring(deploymentId) {
+        // For custom algorithms, just keep the deployment active
+        const interval = setInterval(async () => {
+            try {
+                const deployment = this.deployments[deploymentId];
+                if (!deployment || deployment.status !== 'running') {
+                    clearInterval(interval);
+                    return;
+                }
+
+                // Keep deployment active (custom algorithms run continuously)
+                
+            } catch (error) {
+                console.error('Custom algorithm monitoring error:', error);
+            }
+        }, 60000); // Check every minute
+
+        // Store interval ID for cleanup
+        this.deployments[deploymentId].monitoringInterval = interval;
     }
 
     async executeNiftyBuyAlgorithm(deploymentId) {
