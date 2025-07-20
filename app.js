@@ -214,8 +214,14 @@ class ZerodhaApp {
         testBtn.disabled = true;
 
         try {
+            // If we have request token but no access token, generate access token first
+            if (this.settings.apiKey && this.settings.requestToken && !this.settings.accessToken) {
+                this.log('Generating access token from request token...', 'info');
+                await this.generateAccessToken();
+            }
+
             if (!this.settings.apiKey || !this.settings.accessToken) {
-                throw new Error('API Key and Access Token are required');
+                throw new Error('API Key and Access Token are required. Please complete OAuth flow first.');
             }
 
             this.log('Making test API call to Zerodha...', 'info', {
@@ -223,7 +229,7 @@ class ZerodhaApp {
                 accessToken: this.settings.accessToken.substring(0, 8) + '...'
             });
 
-            // ⚠️ CRITICAL FIX: Use CORS proxy for API calls
+            // Test with user profile API call
             const response = await this.makeZerodhaAPICall('/user/profile', 'GET');
             
             if (response && response.data) {
@@ -235,6 +241,10 @@ class ZerodhaApp {
                 this.updateConnectionStatus();
                 this.log('✅ Successfully connected to Zerodha API', 'success', response.data);
                 this.showNotification('✅ Connected to Zerodha API successfully!', 'success');
+                
+                // Test TCS order placement
+                await this.testTCSOrder();
+                
             } else {
                 throw new Error('Invalid API response');
             }
@@ -254,72 +264,253 @@ class ZerodhaApp {
         testBtn.disabled = false;
     }
 
-    // ⚠️ CRITICAL: CORS-enabled API calls using proxy
+    async generateAccessToken() {
+        this.log('🔑 Generating access token...', 'info');
+        
+        try {
+            const checksum = await this.generateChecksum(this.settings.apiKey, this.settings.requestToken, this.settings.apiSecret);
+            
+            this.log('Checksum generated for access token', 'info', {
+                apiKey: this.settings.apiKey.substring(0, 8) + '...',
+                requestToken: this.settings.requestToken.substring(0, 8) + '...',
+                checksum: checksum.substring(0, 8) + '...'
+            });
+
+            // Try multiple approaches for access token generation
+            const approaches = [
+                // Approach 1: Direct call
+                {
+                    name: 'Direct Access Token Call',
+                    url: 'https://api.kite.trade/session/token',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    }
+                },
+                // Approach 2: CORS proxy
+                {
+                    name: 'CORS Proxy Access Token',
+                    url: 'https://cors-anywhere.herokuapp.com/https://api.kite.trade/session/token',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                }
+            ];
+
+            for (const approach of approaches) {
+                try {
+                    this.log(`Trying ${approach.name}...`, 'info');
+                    
+                    const formData = new URLSearchParams({
+                        api_key: this.settings.apiKey,
+                        request_token: this.settings.requestToken,
+                        checksum: checksum
+                    });
+
+                    const response = await fetch(approach.url, {
+                        method: 'POST',
+                        headers: approach.headers,
+                        body: formData
+                    });
+
+                    this.log(`${approach.name} response status: ${response.status}`, 'info');
+                    
+                    const result = await response.json();
+                    
+                    this.log(`${approach.name} response data:`, 'info', result);
+                    
+                    if (response.ok && result.data && result.data.access_token) {
+                        this.settings.accessToken = result.data.access_token;
+                        document.getElementById('accessToken').value = result.data.access_token;
+                        localStorage.setItem('settings', JSON.stringify(this.settings));
+                        
+                        this.log('✅ Access token generated successfully', 'success', {
+                            accessToken: result.data.access_token.substring(0, 8) + '...'
+                        });
+                        this.showNotification('✅ Access token generated!', 'success');
+                        
+                        return result.data.access_token;
+                    } else {
+                        this.log(`❌ ${approach.name} failed`, 'warning', result);
+                        // Continue to next approach
+                    }
+                    
+                } catch (error) {
+                    this.log(`❌ ${approach.name} exception: ${error.message}`, 'warning');
+                    // Continue to next approach
+                }
+            }
+            
+            // If all approaches fail
+            throw new Error('All access token generation approaches failed. Please check your credentials.');
+            
+        } catch (error) {
+            this.log('❌ Access token generation error', 'error', { error: error.message });
+            throw error;
+        }
+    }
+
+    async generateChecksum(apiKey, requestToken, apiSecret) {
+        // Generate SHA256 checksum for Zerodha API
+        const data = apiKey + requestToken + apiSecret;
+        const encoder = new TextEncoder();
+        const dataBuffer = encoder.encode(data);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', dataBuffer);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        
+        this.log('Checksum generated for OAuth', 'info');
+        return hashHex;
+    }
+
+    async testTCSOrder() {
+        this.log('🧪 Testing TCS order placement...', 'info');
+        
+        try {
+            // Place a test TCS order
+            const orderResult = await this.placeTCSOrder();
+            
+            if (orderResult.success) {
+                this.log('✅ TCS ORDER PLACED SUCCESSFULLY!', 'success', orderResult);
+                this.showNotification(`✅ TCS ORDER PLACED! Order ID: ${orderResult.order_id}`, 'success');
+            } else {
+                this.log('❌ TCS order failed', 'error', orderResult);
+                this.showNotification(`❌ TCS order failed: ${orderResult.message}`, 'error');
+            }
+            
+        } catch (error) {
+            this.log('❌ TCS order test failed', 'error', { error: error.message });
+            this.showNotification(`❌ TCS order test failed: ${error.message}`, 'error');
+        }
+    }
+
+    async placeTCSOrder() {
+        this.log('🔥 PLACING REAL TCS ORDER', 'info');
+        
+        try {
+            // TCS order parameters
+            const orderData = {
+                variety: 'regular',
+                exchange: 'NSE',
+                tradingsymbol: 'TCS',
+                transaction_type: 'BUY',
+                quantity: 1,
+                product: 'MIS',
+                order_type: 'MARKET'
+            };
+
+            this.log('TCS order data prepared', 'info', orderData);
+
+            // Make direct API call to Zerodha
+            const response = await this.makeZerodhaAPICall('/orders/regular', 'POST', orderData);
+            
+            if (response && response.data && response.data.order_id) {
+                this.log('✅ REAL TCS ORDER PLACED SUCCESSFULLY!', 'success', response.data);
+                return {
+                    success: true,
+                    order_id: response.data.order_id,
+                    message: 'TCS order placed successfully'
+                };
+            } else {
+                this.log('❌ TCS order placement failed - Invalid response', 'error', response);
+                throw new Error(response.message || 'TCS order placement failed');
+            }
+            
+        } catch (error) {
+            this.log('❌ TCS order placement exception', 'error', { error: error.message });
+            return {
+                success: false,
+                message: error.message
+            };
+        }
+    }
+
+    // ⚠️ CRITICAL: Fixed API calls for Zerodha
     async makeZerodhaAPICall(endpoint, method, data) {
         try {
             this.log(`Making API call: ${method} ${endpoint}`, 'info', data);
             
-            // Use CORS proxy to bypass browser restrictions
-            const proxyUrl = 'https://cors-anywhere.herokuapp.com/';
-            const baseUrl = 'https://api.kite.trade';
-            const url = `${proxyUrl}${baseUrl}${endpoint}`;
-            
-            const options = {
-                method: method,
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                    'Authorization': `token ${this.settings.apiKey}:${this.settings.accessToken}`,
-                    'X-Requested-With': 'XMLHttpRequest'
+            // Try multiple approaches to bypass CORS
+            const approaches = [
+                // Approach 1: Direct call (will work if CORS is disabled in browser)
+                {
+                    name: 'Direct API Call',
+                    url: `https://api.kite.trade${endpoint}`,
+                    headers: {
+                        'Authorization': `token ${this.settings.apiKey}:${this.settings.accessToken}`,
+                        'X-Kite-Version': '3'
+                    }
+                },
+                // Approach 2: CORS Anywhere proxy
+                {
+                    name: 'CORS Anywhere Proxy',
+                    url: `https://cors-anywhere.herokuapp.com/https://api.kite.trade${endpoint}`,
+                    headers: {
+                        'Authorization': `token ${this.settings.apiKey}:${this.settings.accessToken}`,
+                        'X-Kite-Version': '3',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                },
+                // Approach 3: Alternative CORS proxy
+                {
+                    name: 'AllOrigins Proxy',
+                    url: `https://api.allorigins.win/raw?url=${encodeURIComponent('https://api.kite.trade' + endpoint)}`,
+                    headers: {
+                        'Authorization': `token ${this.settings.apiKey}:${this.settings.accessToken}`,
+                        'X-Kite-Version': '3'
+                    }
                 }
-            };
+            ];
 
-            if (method === 'POST' && data) {
-                const formData = new URLSearchParams();
-                Object.keys(data).forEach(key => {
-                    formData.append(key, data[key]);
-                });
-                options.body = formData;
-                this.log('POST data prepared', 'info', Object.fromEntries(formData));
-            }
+            for (const approach of approaches) {
+                try {
+                    this.log(`Trying ${approach.name}...`, 'info');
+                    
+                    const options = {
+                        method: method,
+                        headers: approach.headers
+                    };
 
-            this.log(`Sending request to: ${url}`, 'info');
-            const response = await fetch(url, options);
-            const result = await response.json();
-            
-            this.log(`API Response received`, 'info', {
-                status: response.status,
-                ok: response.ok,
-                data: result
-            });
-            
-            if (response.ok) {
-                this.log('✅ API call successful', 'success');
-                return result;
-            } else {
-                this.log('❌ API call failed', 'error', result);
-                throw new Error(result.message || 'API call failed');
+                    if (method === 'POST' && data) {
+                        // For POST requests, send as form data
+                        const formData = new URLSearchParams();
+                        Object.keys(data).forEach(key => {
+                            formData.append(key, data[key]);
+                        });
+                        options.body = formData;
+                        options.headers['Content-Type'] = 'application/x-www-form-urlencoded';
+                        this.log('POST data prepared', 'info', Object.fromEntries(formData));
+                    }
+
+                    this.log(`Sending request to: ${approach.url}`, 'info');
+                    const response = await fetch(approach.url, options);
+                    
+                    this.log(`${approach.name} response status: ${response.status}`, 'info');
+                    
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
+                    
+                    const result = await response.json();
+                    
+                    this.log(`✅ ${approach.name} successful!`, 'success', {
+                        status: response.status,
+                        data: result
+                    });
+                    
+                    return result;
+                    
+                } catch (error) {
+                    this.log(`❌ ${approach.name} failed: ${error.message}`, 'warning');
+                    // Continue to next approach
+                }
             }
+            
+            // If all approaches fail, throw error
+            throw new Error('All API call approaches failed. Please check your credentials and network connection.');
             
         } catch (error) {
-            this.log('❌ API call exception', 'error', { error: error.message });
-            
-            // If CORS proxy fails, try direct call (will likely fail but log the attempt)
-            if (error.message.includes('cors-anywhere')) {
-                this.log('CORS proxy failed, attempting direct call (will likely fail due to CORS)', 'warning');
-                try {
-                    const directUrl = `https://api.kite.trade${endpoint}`;
-                    const directResponse = await fetch(directUrl, {
-                        method: method,
-                        headers: {
-                            'Authorization': `token ${this.settings.apiKey}:${this.settings.accessToken}`
-                        }
-                    });
-                    this.log('Direct call response', 'info', { status: directResponse.status });
-                } catch (directError) {
-                    this.log('❌ Direct call failed as expected due to CORS', 'error', { error: directError.message });
-                }
-            }
-            
+            this.log('❌ All API call attempts failed', 'error', { error: error.message });
             throw error;
         }
     }
@@ -814,23 +1005,247 @@ Local file:// URLs will NOT work.
     }
 
     async executeCustomAlgorithm(algorithm, deploymentId) {
-        this.log(`Executing custom algorithm: ${algorithm.name}`, 'info');
+        this.log(`🔥 Executing custom algorithm for REAL TRADING: ${algorithm.name}`, 'info');
         
         try {
-            // For custom algorithms, show notification that it's deployed
-            this.log(`✅ Custom algorithm "${algorithm.name}" deployed successfully!`, 'success');
-            this.showNotification(`✅ Custom algorithm "${algorithm.name}" deployed successfully!`, 'success');
+            // Parse and execute the custom algorithm code
+            const tradingSignals = await this.parseAlgorithmCode(algorithm.code, algorithm.name);
             
-            // Update deployment stats
-            this.deployments[deploymentId].trades = 1;
-            localStorage.setItem('deployments', JSON.stringify(this.deployments));
+            if (tradingSignals && tradingSignals.length > 0) {
+                this.log(`📊 Algorithm generated ${tradingSignals.length} trading signals`, 'info', tradingSignals);
+                
+                // Execute each trading signal as real orders
+                let successfulTrades = 0;
+                for (const signal of tradingSignals) {
+                    try {
+                        const orderResult = await this.executeTradeSignal(signal, deploymentId);
+                        if (orderResult.success) {
+                            successfulTrades++;
+                            this.log(`✅ Trade executed successfully: ${signal.symbol} ${signal.action}`, 'success', orderResult);
+                        } else {
+                            this.log(`❌ Trade failed: ${signal.symbol} ${signal.action}`, 'error', orderResult);
+                        }
+                    } catch (tradeError) {
+                        this.log(`❌ Trade execution error: ${tradeError.message}`, 'error');
+                    }
+                }
+                
+                // Update deployment stats
+                this.deployments[deploymentId].trades = successfulTrades;
+                localStorage.setItem('deployments', JSON.stringify(this.deployments));
+                
+                this.log(`✅ Custom algorithm executed: ${successfulTrades}/${tradingSignals.length} trades successful`, 'success');
+                this.showNotification(`✅ Algorithm executed: ${successfulTrades} real trades placed!`, 'success');
+                
+            } else {
+                // If no specific trading signals, execute default strategy
+                this.log('No specific trading signals found, executing default strategy', 'info');
+                await this.executeDefaultAlgorithmStrategy(algorithm, deploymentId);
+            }
             
-            // Start monitoring (for custom algorithms, just update status periodically)
+            // Start monitoring the algorithm
             this.startCustomAlgorithmMonitoring(deploymentId);
             
         } catch (error) {
-            this.log(`❌ Custom algorithm failed: ${error.message}`, 'error');
-            this.showNotification(`❌ Custom algorithm failed: ${error.message}`, 'error');
+            this.log(`❌ Custom algorithm execution failed: ${error.message}`, 'error');
+            this.showNotification(`❌ Algorithm execution failed: ${error.message}`, 'error');
+            throw error;
+        }
+    }
+
+    async parseAlgorithmCode(code, algorithmName) {
+        this.log('🔍 Parsing algorithm code for trading signals...', 'info');
+        
+        try {
+            const tradingSignals = [];
+            
+            // Look for common trading patterns in the code
+            const patterns = {
+                // Pattern 1: Direct order specifications
+                orderPattern: /(?:place_order|buy|sell|order)\s*\(\s*['"](.*?)['"].*?(\d+).*?\)/gi,
+                
+                // Pattern 2: Symbol and action pairs
+                symbolPattern: /(?:symbol|stock|tradingsymbol)\s*[=:]\s*['"](.*?)['"]/gi,
+                actionPattern: /(?:action|transaction|side)\s*[=:]\s*['"](BUY|SELL)['"]/gi,
+                quantityPattern: /(?:quantity|qty|shares)\s*[=:]\s*(\d+)/gi,
+                
+                // Pattern 3: Common stock symbols
+                stockSymbols: /(TCS|INFY|RELIANCE|HDFC|ICICI|SBI|ITC|WIPRO|HCLTECH|TECHM|NIFTY|BANKNIFTY)/gi,
+                
+                // Pattern 4: Trading actions
+                tradingActions: /(BUY|SELL|LONG|SHORT)/gi
+            };
+            
+            // Extract trading signals from code
+            let symbols = [];
+            let actions = [];
+            let quantities = [];
+            
+            // Find symbols
+            let match;
+            while ((match = patterns.symbolPattern.exec(code)) !== null) {
+                symbols.push(match[1].toUpperCase());
+            }
+            
+            // Find stock symbols in comments or strings
+            while ((match = patterns.stockSymbols.exec(code)) !== null) {
+                if (!symbols.includes(match[1])) {
+                    symbols.push(match[1]);
+                }
+            }
+            
+            // Find actions
+            while ((match = patterns.actionPattern.exec(code)) !== null) {
+                actions.push(match[1].toUpperCase());
+            }
+            
+            // Find trading actions
+            while ((match = patterns.tradingActions.exec(code)) !== null) {
+                if (!actions.includes(match[1])) {
+                    actions.push(match[1].toUpperCase());
+                }
+            }
+            
+            // Find quantities
+            while ((match = patterns.quantityPattern.exec(code)) !== null) {
+                quantities.push(parseInt(match[1]));
+            }
+            
+            // Create trading signals
+            if (symbols.length > 0) {
+                for (let i = 0; i < symbols.length; i++) {
+                    const signal = {
+                        symbol: symbols[i],
+                        action: actions[i] || actions[0] || 'BUY',
+                        quantity: quantities[i] || quantities[0] || 1,
+                        orderType: 'MARKET',
+                        product: 'MIS',
+                        exchange: this.getExchangeForSymbol(symbols[i])
+                    };
+                    
+                    // Normalize action
+                    if (signal.action === 'LONG') signal.action = 'BUY';
+                    if (signal.action === 'SHORT') signal.action = 'SELL';
+                    
+                    tradingSignals.push(signal);
+                }
+            }
+            
+            // If algorithm name contains stock symbols, add them
+            const nameSymbols = algorithmName.match(patterns.stockSymbols);
+            if (nameSymbols && tradingSignals.length === 0) {
+                nameSymbols.forEach(symbol => {
+                    tradingSignals.push({
+                        symbol: symbol.toUpperCase(),
+                        action: 'BUY',
+                        quantity: 1,
+                        orderType: 'MARKET',
+                        product: 'MIS',
+                        exchange: this.getExchangeForSymbol(symbol)
+                    });
+                });
+            }
+            
+            this.log(`📊 Parsed ${tradingSignals.length} trading signals from algorithm`, 'success', tradingSignals);
+            return tradingSignals;
+            
+        } catch (error) {
+            this.log(`❌ Error parsing algorithm code: ${error.message}`, 'error');
+            return [];
+        }
+    }
+
+    getExchangeForSymbol(symbol) {
+        // Determine exchange based on symbol
+        const nfoSymbols = ['NIFTY', 'BANKNIFTY'];
+        const nseSymbols = ['TCS', 'INFY', 'RELIANCE', 'HDFC', 'ICICI', 'SBI', 'ITC', 'WIPRO', 'HCLTECH', 'TECHM'];
+        
+        if (nfoSymbols.some(nfo => symbol.includes(nfo))) {
+            return 'NFO';
+        } else if (nseSymbols.includes(symbol)) {
+            return 'NSE';
+        } else {
+            return 'NSE'; // Default to NSE
+        }
+    }
+
+    async executeTradeSignal(signal, deploymentId) {
+        this.log(`🔥 Executing trade signal: ${signal.symbol} ${signal.action}`, 'info', signal);
+        
+        try {
+            // Validate market hours
+            if (!this.isMarketOpen()) {
+                this.log('⚠️ Market is closed, trade signal queued for next market session', 'warning');
+                return {
+                    success: false,
+                    message: 'Market is closed',
+                    queued: true
+                };
+            }
+            
+            // Place real order using the same logic as TCS order
+            const orderData = {
+                variety: 'regular',
+                exchange: signal.exchange,
+                tradingsymbol: signal.symbol,
+                transaction_type: signal.action,
+                quantity: signal.quantity,
+                product: signal.product,
+                order_type: signal.orderType
+            };
+
+            this.log(`📋 Order data prepared for ${signal.symbol}`, 'info', orderData);
+
+            // Make direct API call to Zerodha
+            const response = await this.makeZerodhaAPICall('/orders/regular', 'POST', orderData);
+            
+            if (response && response.data && response.data.order_id) {
+                this.log(`✅ REAL ORDER PLACED: ${signal.symbol} ${signal.action}`, 'success', response.data);
+                return {
+                    success: true,
+                    order_id: response.data.order_id,
+                    message: `${signal.symbol} ${signal.action} order placed successfully`
+                };
+            } else {
+                this.log(`❌ Order placement failed for ${signal.symbol}`, 'error', response);
+                throw new Error(response.message || `${signal.symbol} order placement failed`);
+            }
+            
+        } catch (error) {
+            this.log(`❌ Trade signal execution error: ${error.message}`, 'error');
+            return {
+                success: false,
+                message: error.message
+            };
+        }
+    }
+
+    async executeDefaultAlgorithmStrategy(algorithm, deploymentId) {
+        this.log('Executing default algorithm strategy', 'info');
+        
+        try {
+            // Default strategy: Place a TCS buy order
+            const defaultSignal = {
+                symbol: 'TCS',
+                action: 'BUY',
+                quantity: 1,
+                orderType: 'MARKET',
+                product: 'MIS',
+                exchange: 'NSE'
+            };
+            
+            const orderResult = await this.executeTradeSignal(defaultSignal, deploymentId);
+            
+            if (orderResult.success) {
+                this.deployments[deploymentId].trades = 1;
+                localStorage.setItem('deployments', JSON.stringify(this.deployments));
+                this.log('✅ Default strategy executed successfully', 'success');
+            } else {
+                this.log('❌ Default strategy failed', 'error', orderResult);
+            }
+            
+        } catch (error) {
+            this.log(`❌ Default strategy error: ${error.message}`, 'error');
             throw error;
         }
     }
@@ -974,10 +1389,10 @@ Local file:// URLs will NOT work.
         if (Object.keys(this.algorithms).length === 0) {
             this.log('Creating default NIFTY algorithm', 'info');
             
-            const niftyBuyAlgorithm = {
-                id: 'nifty_buy_' + Date.now(),
-                name: 'NIFTY Futures Buy',
-                description: 'Real trading algorithm that places a buy order on NIFTY futures when deployed',
+            const tcsAlgorithm = {
+                id: 'tcs_buy_' + Date.now(),
+                name: 'TCS Stock Buy',
+                description: 'Real trading algorithm that places a buy order on TCS stock when deployed',
                 code: `# NIFTY Futures Buy Algorithm - REAL TRADING
 # This algorithm places a REAL buy order on NIFTY futures when deployed
 
