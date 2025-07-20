@@ -1,6 +1,6 @@
-# Zerodha Trading App
+# Zerodha Trading Algorithm System
 
-A comprehensive web-based trading application that connects with Zerodha's API to manage positions, create trading algorithms, and deploy automated trading strategies.
+A comprehensive web-based trading application with real algorithm deployment capabilities that connects with Zerodha's API to manage positions, create trading algorithms, and deploy automated trading strategies with actual execution.
 
 ## Features
 
@@ -139,14 +139,54 @@ def risk_management():
 3. View real-time P&L and day changes
 4. Monitor connection status indicator
 
+## Real Algorithm Deployment
+
+### 🔥 NEW: Actual Algorithm Execution
+
+This system now includes a **real Python backend** that can execute your algorithms with actual trading:
+
+#### Backend Components
+- **`algorithm_executor.py`**: Core algorithm execution engine
+- **`api_server.py`**: Flask REST API server
+- **`requirements.txt`**: Python dependencies
+- **`start_trading_system.bat`**: Easy startup script
+
+#### How It Works
+1. **Frontend**: Web interface for creating and managing algorithms
+2. **API Server**: Flask server that receives deployment requests
+3. **Executor**: Python service that runs algorithms in separate threads
+4. **KiteConnect**: Real integration with Zerodha's trading API
+
+#### Starting the System
+```bash
+# Option 1: Use the startup script (Windows)
+start_trading_system.bat
+
+# Option 2: Manual startup
+pip install -r requirements.txt
+python api_server.py
+```
+
+#### Real vs Simulation Mode
+- **Real Mode**: When API server is running, algorithms execute with actual trading
+- **Simulation Mode**: Fallback mode when API server is not available
+- **Auto-Detection**: Frontend automatically detects and switches modes
+
 ## File Structure
 
 ```
-zerodha-trading-app/
-├── index.html          # Main HTML structure
-├── styles.css          # Application styling
-├── app.js             # Core JavaScript functionality
-└── README.md          # Documentation
+zerodha-trading-system/
+├── index.html              # Main HTML structure
+├── styles.css              # Application styling
+├── app.js                  # Frontend JavaScript functionality
+├── redirect.html           # OAuth redirect handler
+├── algorithm_executor.py   # Python algorithm execution engine
+├── api_server.py          # Flask REST API server
+├── requirements.txt       # Python dependencies
+├── start_trading_system.bat # Windows startup script
+├── nifty_buy_algorithm.py # Sample algorithm
+├── README.md              # This documentation
+└── DEPLOYMENT_GUIDE.md    # Hosting setup guide
 ```
 
 ## Key Components

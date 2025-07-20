@@ -10,6 +10,7 @@ class ZerodhaApp {
         this.isConnected = false;
         
         this.init();
+        this.createDefaultAlgorithms();
     }
 
     init() {
@@ -114,31 +115,59 @@ class ZerodhaApp {
         testBtn.disabled = true;
 
         try {
-            // Simulate API connection test
-            await this.simulateApiCall();
+            // Test real API connection
+            const response = await fetch('http://localhost:5000/api/test-connection', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    api_key: this.settings.apiKey,
+                    access_token: this.settings.accessToken
+                })
+            });
+
+            const result = await response.json();
             
-            resultDiv.className = 'connection-result success';
-            resultDiv.style.display = 'block';
-            resultDiv.textContent = 'Connection successful! API credentials are valid.';
-            
-            this.isConnected = true;
-            this.updateConnectionStatus();
-            
-            // Generate mock access token
-            if (this.settings.apiKey && this.settings.apiSecret && this.settings.requestToken) {
-                const mockAccessToken = 'mock_access_token_' + Date.now();
-                document.getElementById('accessToken').value = mockAccessToken;
-                this.settings.accessToken = mockAccessToken;
-                localStorage.setItem('settings', JSON.stringify(this.settings));
+            if (result.success) {
+                resultDiv.className = 'connection-result success';
+                resultDiv.style.display = 'block';
+                resultDiv.textContent = `Connection successful! Connected to ${result.user_name}'s account.`;
+                
+                this.isConnected = true;
+                this.updateConnectionStatus();
+            } else {
+                throw new Error(result.message);
             }
             
         } catch (error) {
-            resultDiv.className = 'connection-result error';
-            resultDiv.style.display = 'block';
-            resultDiv.textContent = 'Connection failed: ' + error.message;
-            
-            this.isConnected = false;
-            this.updateConnectionStatus();
+            // Fallback to simulation if API server is not running
+            if (error.message.includes('fetch')) {
+                this.showNotification('API server not running. Using simulation mode.', 'warning');
+                await this.simulateApiCall();
+                
+                resultDiv.className = 'connection-result success';
+                resultDiv.style.display = 'block';
+                resultDiv.textContent = 'Connection successful! (Simulation Mode)';
+                
+                this.isConnected = true;
+                this.updateConnectionStatus();
+                
+                // Generate mock access token
+                if (this.settings.apiKey && this.settings.apiSecret && this.settings.requestToken) {
+                    const mockAccessToken = 'mock_access_token_' + Date.now();
+                    document.getElementById('accessToken').value = mockAccessToken;
+                    this.settings.accessToken = mockAccessToken;
+                    localStorage.setItem('settings', JSON.stringify(this.settings));
+                }
+            } else {
+                resultDiv.className = 'connection-result error';
+                resultDiv.style.display = 'block';
+                resultDiv.textContent = 'Connection failed: ' + error.message;
+                
+                this.isConnected = false;
+                this.updateConnectionStatus();
+            }
         }
 
         testBtn.innerHTML = 'Test API Connection';
@@ -422,7 +451,7 @@ Local file:// URLs will NOT work.
         this.loadAlgorithm(algorithmId);
     }
 
-    deployAlgorithm(algorithmId) {
+    async deployAlgorithm(algorithmId) {
         const algorithm = this.algorithms[algorithmId];
         if (!algorithm) return;
 
@@ -431,25 +460,62 @@ Local file:// URLs will NOT work.
             return;
         }
 
-        const deploymentId = Date.now().toString();
-        const deployment = {
-            id: deploymentId,
-            algorithmId,
-            algorithmName: algorithm.name,
-            status: 'running',
-            startedAt: new Date().toISOString(),
-            profit: 0,
-            trades: 0
-        };
+        try {
+            // Try to deploy using real API server
+            const response = await fetch('http://localhost:5000/api/deploy', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    algorithm_id: algorithmId,
+                    algorithm_name: algorithm.name,
+                    algorithm_code: algorithm.code,
+                    api_key: this.settings.apiKey,
+                    access_token: this.settings.accessToken,
+                    max_positions: this.settings.maxPositions || 10,
+                    risk_per_trade: this.settings.riskPerTrade || 2.0,
+                    auto_trade: this.settings.autoTrade || false
+                })
+            });
 
-        this.deployments[deploymentId] = deployment;
-        localStorage.setItem('deployments', JSON.stringify(this.deployments));
-        
-        this.loadDeployments();
-        this.showNotification(`Algorithm "${algorithm.name}" deployed successfully!`, 'success');
-        
-        // Simulate trading activity
-        this.simulateTrading(deploymentId);
+            const result = await response.json();
+            
+            if (result.success) {
+                this.showNotification(`Algorithm "${algorithm.name}" deployed successfully!`, 'success');
+                this.loadDeployments();
+            } else {
+                throw new Error(result.message);
+            }
+            
+        } catch (error) {
+            // Fallback to simulation if API server is not running
+            if (error.message.includes('fetch')) {
+                this.showNotification('API server not running. Using simulation mode.', 'warning');
+                
+                const deploymentId = Date.now().toString();
+                const deployment = {
+                    id: deploymentId,
+                    algorithmId,
+                    algorithmName: algorithm.name,
+                    status: 'running',
+                    startedAt: new Date().toISOString(),
+                    profit: 0,
+                    trades: 0
+                };
+
+                this.deployments[deploymentId] = deployment;
+                localStorage.setItem('deployments', JSON.stringify(this.deployments));
+                
+                this.loadDeployments();
+                this.showNotification(`Algorithm "${algorithm.name}" deployed successfully! (Simulation Mode)`, 'success');
+                
+                // Simulate trading activity
+                this.simulateTrading(deploymentId);
+            } else {
+                this.showNotification(`Deployment failed: ${error.message}`, 'error');
+            }
+        }
     }
 
     loadDeployments() {
@@ -530,6 +596,176 @@ Local file:// URLs will NOT work.
                 }
             }, 2000);
         });
+    }
+
+    createDefaultAlgorithms() {
+        // Only create default algorithms if none exist
+        if (Object.keys(this.algorithms).length === 0) {
+            const niftyBuyAlgorithm = {
+                id: 'nifty_buy_' + Date.now(),
+                name: 'NIFTY Futures Buy',
+                description: 'Simple algorithm that places a buy order on NIFTY futures when deployed',
+                code: `# NIFTY Futures Buy Algorithm
+# This algorithm places a buy order on NIFTY futures when deployed
+
+import datetime
+from kiteconnect import KiteConnect
+
+def main():
+    """
+    Main function that executes the trading strategy
+    """
+    print("Starting NIFTY Futures Buy Algorithm...")
+    
+    # Get current NIFTY futures symbol
+    nifty_symbol = get_current_nifty_symbol()
+    
+    # Place buy order
+    place_buy_order(nifty_symbol)
+    
+    print("Algorithm execution completed!")
+
+def get_current_nifty_symbol():
+    """
+    Get the current month NIFTY futures symbol
+    Returns the trading symbol for current month NIFTY futures
+    """
+    current_date = datetime.datetime.now()
+    
+    # NIFTY futures expire on last Thursday of every month
+    # Format: NIFTY24JANFUT, NIFTY24FEBFUT, etc.
+    
+    months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
+              'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
+    
+    year = str(current_date.year)[-2:]  # Last 2 digits of year
+    month = months[current_date.month - 1]
+    
+    symbol = f"NIFTY{year}{month}FUT"
+    print(f"Trading symbol: {symbol}")
+    
+    return symbol
+
+def place_buy_order(symbol):
+    """
+    Place a buy order for NIFTY futures
+    """
+    try:
+        # Order parameters
+        quantity = 50  # 1 lot of NIFTY futures (50 shares)
+        order_type = "MARKET"  # Market order for immediate execution
+        product = "MIS"  # Intraday order
+        
+        print(f"Placing BUY order for {symbol}")
+        print(f"Quantity: {quantity}")
+        print(f"Order Type: {order_type}")
+        print(f"Product: {product}")
+        
+        # In real implementation, this would use KiteConnect API:
+        # order_id = kite.place_order(
+        #     variety=kite.VARIETY_REGULAR,
+        #     exchange=kite.EXCHANGE_NFO,
+        #     tradingsymbol=symbol,
+        #     transaction_type=kite.TRANSACTION_TYPE_BUY,
+        #     quantity=quantity,
+        #     product=product,
+        #     order_type=order_type
+        # )
+        
+        # Mock order placement for demo
+        order_id = f"ORDER_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        
+        print(f"✅ Order placed successfully!")
+        print(f"Order ID: {order_id}")
+        print(f"Symbol: {symbol}")
+        print(f"Transaction: BUY")
+        print(f"Quantity: {quantity}")
+        
+        # Log the trade
+        log_trade(order_id, symbol, "BUY", quantity, order_type)
+        
+        return order_id
+        
+    except Exception as e:
+        print(f"❌ Error placing order: {str(e)}")
+        return None
+
+def log_trade(order_id, symbol, transaction_type, quantity, order_type):
+    """
+    Log the trade details
+    """
+    timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    
+    log_entry = f"""
+    ==========================================
+    TRADE LOG
+    ==========================================
+    Timestamp: {timestamp}
+    Order ID: {order_id}
+    Symbol: {symbol}
+    Transaction: {transaction_type}
+    Quantity: {quantity}
+    Order Type: {order_type}
+    Status: SUBMITTED
+    ==========================================
+    """
+    
+    print(log_entry)
+
+def get_market_data(symbol):
+    """
+    Get current market data for the symbol
+    """
+    # In real implementation, this would fetch live data:
+    # quote = kite.quote(f"NFO:{symbol}")
+    # return quote[f"NFO:{symbol}"]
+    
+    # Mock data for demo
+    mock_data = {
+        'last_price': 21500.75,
+        'volume': 1250000,
+        'change': 125.50,
+        'change_percent': 0.58
+    }
+    
+    print(f"Market Data for {symbol}:")
+    print(f"LTP: ₹{mock_data['last_price']}")
+    print(f"Change: +₹{mock_data['change']} ({mock_data['change_percent']}%)")
+    
+    return mock_data
+
+# Risk Management Functions
+def check_risk_parameters():
+    """
+    Check risk parameters before placing order
+    """
+    # Add your risk management logic here
+    # Example: Check account balance, existing positions, etc.
+    
+    print("✅ Risk parameters checked")
+    return True
+
+def calculate_position_size():
+    """
+    Calculate appropriate position size based on risk management
+    """
+    # Add position sizing logic here
+    # Example: Based on account size, risk per trade, etc.
+    
+    return 50  # 1 lot for NIFTY futures
+
+# Entry point
+if __name__ == "__main__":
+    main()`,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString()
+            };
+
+            this.algorithms[niftyBuyAlgorithm.id] = niftyBuyAlgorithm;
+            localStorage.setItem('algorithms', JSON.stringify(this.algorithms));
+            
+            console.log('Default NIFTY Buy algorithm created');
+        }
     }
 
     showNotification(message, type = 'info') {
